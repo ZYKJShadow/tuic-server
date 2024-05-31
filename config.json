@@ -1,0 +1,12 @@
+{
+  "server": "127.0.0.1:8888",
+  "cert_path": "cert/cert.pem",
+  "private_key": "cert/key.pem",
+  "password": "0dcd8b80-603c-49dd-bfb7-61ebcfd5fbb8",
+  "alpn": [
+    "h3"
+  ],
+  "zero_rtt_handshake": true,
+  "auth_timeout": 3,
+  "max_idle_time": 3
+}
