@@ -20,7 +20,6 @@
 }
 ```
 字段说明：
-client_config:
 1. server: 监听地址
 2. cert_path: 证书路径
 3. private_key: 私钥路径
