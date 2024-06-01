@@ -3,7 +3,7 @@ module tuic-server
 go 1.21.7
 
 require (
-	github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240527023543-f200ab788128
+	github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240601053456-c4a3f2efd0f8
 	github.com/google/uuid v1.6.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301

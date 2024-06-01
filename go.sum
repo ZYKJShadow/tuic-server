@@ -4,6 +4,8 @@ github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240526023008-1c834f786c28 h1:YXs
 github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240526023008-1c834f786c28/go.mod h1:gJJRU/bie0TNVFvrPlvnMSptjoUeEAy1t9lL8i6QWeE=
 github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240527023543-f200ab788128 h1:0DeB4EC2pEecGI8cwiO3y1pWBTCmDZVUjWJDKGevGoU=
 github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240527023543-f200ab788128/go.mod h1:gJJRU/bie0TNVFvrPlvnMSptjoUeEAy1t9lL8i6QWeE=
+github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240601053456-c4a3f2efd0f8 h1:oSE1q4wENDY4y3c8fzF2YGSDa7g/02+6DIoKKBJ2YkM=
+github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240601053456-c4a3f2efd0f8/go.mod h1:gJJRU/bie0TNVFvrPlvnMSptjoUeEAy1t9lL8i6QWeE=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=

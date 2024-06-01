@@ -6,14 +6,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"github.com/ZYKJShadow/tuic-protocol-go/address"
 	"github.com/ZYKJShadow/tuic-protocol-go/auth"
+	"github.com/ZYKJShadow/tuic-protocol-go/fragment"
 	"github.com/ZYKJShadow/tuic-protocol-go/options"
 	"github.com/ZYKJShadow/tuic-protocol-go/protocol"
 	"github.com/ZYKJShadow/tuic-protocol-go/utils"
 	"github.com/quic-go/quic-go"
 	"github.com/sirupsen/logrus"
-	"github.com/txthinking/socks5"
 	"golang.org/x/sync/errgroup"
 	"io"
 	"net"
@@ -22,7 +21,6 @@ import (
 	"time"
 	"tuic-server/authenticate"
 	"tuic-server/config"
-	"tuic-server/fragment"
 	"tuic-server/socket"
 )
 
@@ -160,7 +158,7 @@ func (s *TUICServer) onConnection(conn quic.Connection) {
 				return err
 			}
 
-			_ = stream.SetDeadline(time.Now().Add(time.Second * 10))
+			_ = stream.SetDeadline(time.Now().Add(time.Second * time.Duration(s.MaxIdleTime)))
 
 			g.Go(func() error {
 				s.onHandleStream(conn, stream)
@@ -172,10 +170,6 @@ func (s *TUICServer) onConnection(conn quic.Connection) {
 	g.Go(func() error {
 		for {
 			datagram, err := conn.ReceiveDatagram(context.Background())
-			if err != nil {
-				return err
-			}
-
 			if err != nil {
 				logrus.Errorf("Failed to receive datagram: %v", err)
 				return err
@@ -276,6 +270,8 @@ func (s *TUICServer) onHandleStream(conn quic.Connection, stream quic.Stream) {
 		}
 	}
 
+	defer s.onCloseStream(stream)
+
 	switch cmd.Type {
 	case protocol.CmdAuthenticate:
 		err = errors.New("bad command authenticate")
@@ -323,106 +319,6 @@ func (s *TUICServer) authenticate(conn quic.Connection, opts *options.Authentica
 	return nil
 }
 
-func (s *TUICServer) connect(stream quic.Stream, opts *options.ConnectOptions) error {
-	defer s.onCloseStream(stream)
-	conn, err := s.tcp(stream, opts.Addr)
-	if err != nil {
-		return err
-	}
-
-	_ = conn.SetDeadline(time.Now().Add(time.Second * time.Duration(s.MaxIdleTime)))
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		// 从stream中读取数据并写入conn
-		_, err := io.Copy(conn, stream)
-		if err != nil {
-			// 发生错误，取消读取并通知客户端
-			var e *quic.StreamError
-			if errors.As(err, &e) && e.ErrorCode == protocol.NormalClosed {
-				stream.CancelRead(protocol.NormalClosed)
-				return
-			}
-
-			if errors.Is(err, net.ErrClosed) {
-				stream.CancelRead(protocol.NormalClosed)
-				return
-			}
-
-			logrus.Errorf("Failed to copy from stream to conn: %v", err)
-			stream.CancelRead(protocol.ServerCanceled)
-
-			return
-		}
-
-		// stream数据接受完毕，正常关闭tcp连接
-		_ = conn.Close()
-	}()
-
-	go func() {
-		defer wg.Done()
-		// 从conn中读取数据并写入stream
-		_, err := io.Copy(stream, conn)
-		if err != nil {
-			_ = conn.Close()
-
-			if errors.Is(err, net.ErrClosed) {
-				return
-			}
-
-			logrus.Errorf("Failed to copy from conn to stream: %v", err)
-
-			return
-		}
-
-		_ = stream.Close()
-	}()
-
-	wg.Wait()
-
-	return nil
-}
-
-func (s *TUICServer) communication(reader io.Reader, writer io.Writer, errChan chan error) {
-	var b [1024 * 2]byte
-	var n int
-	var err error
-	for {
-		n, err = reader.Read(b[:])
-		if err != nil {
-			errChan <- err
-			return
-		}
-
-		_, err = writer.Write(b[:n])
-		if err != nil {
-			errChan <- err
-			return
-		}
-	}
-}
-
-func (s *TUICServer) packet(conn quic.Connection, stream io.Reader, opts *options.PacketOptions, mode string) error {
-	data := make([]byte, opts.Size)
-	_, err := io.ReadFull(stream, data)
-	if err != nil {
-		logrus.Errorf("Failed to read packet: %v", err)
-		return err
-	}
-
-	switch mode {
-	case protocol.UdpRelayModeQuic:
-		return s.onHandleQUICPacket(conn, data, opts)
-	case protocol.UdpRelayModeNative:
-		return s.onHandleNativePacket(conn, data, opts)
-	default:
-		return errors.New("unknown udp relay mode")
-	}
-}
-
 func (s *TUICServer) dissociate(conn quic.Connection, stream io.Reader) error {
 	// 反序列化options,关闭对应的UDP会话
 	var opts options.DissociateOptions
@@ -454,133 +350,4 @@ func (s *TUICServer) dissociate(conn quic.Connection, stream io.Reader) error {
 func (s *TUICServer) onCloseStream(stream quic.Stream) {
 	stream.CancelRead(protocol.NormalClosed)
 	stream.CancelWrite(protocol.NormalClosed)
-}
-
-func (s *TUICServer) onHandleQUICPacket(conn quic.Connection, data []byte, opts *options.PacketOptions) error {
-	if opts.FragTotal > 1 {
-		return s.onHandleFragmentedPacket(conn, data, opts)
-	}
-
-	return s.udp(conn, opts.AssocID, data, opts.Addr)
-}
-
-func (s *TUICServer) onHandleNativePacket(conn quic.Connection, data []byte, opts *options.PacketOptions) error {
-	return s.udp(conn, opts.AssocID, data, opts.Addr)
-}
-
-func (s *TUICServer) onHandleFragmentedPacket(conn quic.Connection, data []byte, opts *options.PacketOptions) error {
-	cache, ok := s.fragmentCacheMap[conn]
-	if !ok {
-		cache = fragment.NewFCache()
-
-		s.Lock()
-		s.fragmentCacheMap[conn] = cache
-		s.Unlock()
-	}
-
-	data = cache.AddFragment(opts.AssocID, opts.FragID, opts.FragTotal, opts.Size, data)
-	if data != nil {
-		return s.udp(conn, opts.AssocID, data, opts.Addr)
-	}
-
-	return nil
-}
-
-func (s *TUICServer) tcp(stream quic.Stream, protocolAddr address.Address) (net.Conn, error) {
-	rc, err := net.DialTimeout(protocol.NetworkTcp, protocolAddr.String(), time.Second*time.Duration(s.Config.MaxIdleTime))
-	if err != nil {
-		var p *socks5.Reply
-		if protocolAddr.TypeCode() == address.AddrTypeDomain || protocolAddr.TypeCode() == address.AddrTypeIPv4 {
-			p = socks5.NewReply(socks5.RepHostUnreachable, socks5.ATYPIPv4, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x00, 0x00})
-		} else {
-			p = socks5.NewReply(socks5.RepHostUnreachable, socks5.ATYPIPv6, net.IPv6zero, []byte{0x00, 0x00})
-		}
-
-		if _, err := p.WriteTo(stream); err != nil {
-			return nil, err
-		}
-
-		return nil, err
-	}
-
-	a, parseAddr, port, err := socks5.ParseAddress(rc.LocalAddr().String())
-	if err != nil {
-		_ = rc.Close()
-
-		var p *socks5.Reply
-		if protocolAddr.TypeCode() == address.AddrTypeDomain || protocolAddr.TypeCode() == address.AddrTypeIPv4 {
-			p = socks5.NewReply(socks5.RepHostUnreachable, socks5.ATYPIPv4, []byte{0x00, 0x00, 0x00, 0x00}, []byte{0x00, 0x00})
-		} else {
-			p = socks5.NewReply(socks5.RepHostUnreachable, socks5.ATYPIPv6, net.IPv6zero, []byte{0x00, 0x00})
-		}
-
-		if _, err := p.WriteTo(stream); err != nil {
-			return nil, err
-		}
-
-		return nil, err
-	}
-
-	if a == socks5.ATYPDomain {
-		parseAddr = parseAddr[1:]
-	}
-
-	p := socks5.NewReply(socks5.RepSuccess, a, parseAddr, port)
-	if _, err = p.WriteTo(stream); err != nil {
-		_ = rc.Close()
-		return nil, err
-	}
-
-	_ = rc.SetReadDeadline(time.Now().Add(time.Second * time.Duration(s.Config.MaxIdleTime)))
-	_ = rc.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(s.Config.MaxIdleTime)))
-
-	return rc, nil
-}
-
-func (s *TUICServer) udp(conn quic.Connection, assocID uint16, data []byte, addr address.Address) error {
-	udpSocket, ok := s.socketCacheMap[conn]
-	if !ok {
-		udpSocket = socket.NewUdpSocket()
-
-		s.Lock()
-		s.socketCacheMap[conn] = udpSocket
-		s.Unlock()
-	}
-
-	udp := udpSocket.Get(assocID)
-	if udp == nil {
-		remoteAddr, err := net.ResolveUDPAddr(protocol.NetworkUdp, addr.String())
-		if err != nil {
-			logrus.Errorf("udp resolve err:%v", err)
-			return err
-		}
-
-		udp, err = net.DialUDP(protocol.NetworkUdp, nil, remoteAddr)
-		if err != nil {
-			logrus.Errorf("udp dial err:%v", err)
-			return err
-		}
-
-		udpSocket.Set(assocID, udp)
-	}
-
-	_, err := udp.Write(data)
-	if err != nil {
-		logrus.Errorf("udp write err:%v", err)
-		return err
-	}
-
-	b := make([]byte, 2048)
-	for {
-		_, err := udp.Read(b)
-		if err != nil {
-			logrus.Errorf("udp read err:%v", err)
-			udpSocket.Del(assocID)
-			break
-		}
-
-		// TODO 封装packet发送回客户端
-	}
-
-	return nil
 }

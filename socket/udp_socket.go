@@ -7,13 +7,14 @@ import (
 
 type UdpSocket struct {
 	cache map[uint16]*net.UDPConn
-
+	mode  string
 	sync.Mutex
 }
 
-func NewUdpSocket() *UdpSocket {
+func NewUdpSocket(mode string) *UdpSocket {
 	return &UdpSocket{
 		cache: make(map[uint16]*net.UDPConn),
+		mode:  mode,
 	}
 }
 
