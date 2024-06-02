@@ -13,6 +13,7 @@ type Config struct {
 	ZeroRTTHandshake bool     `json:"zero_rtt_handshake"`
 	AuthTimeout      int      `json:"auth_timeout"`
 	MaxIdleTime      int      `json:"max_idle_time"`
+	MaxPacketSize    uint32   `json:"max_packet_size"`
 }
 
 func (c *Config) Unmarshal(b []byte) error {

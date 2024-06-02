@@ -16,7 +16,8 @@
   ],
   "zero_rtt_handshake": true,
   "auth_timeout": 3,
-  "max_idle_time": 3
+  "max_idle_time": 3,
+  "max_packet_size": 2048
 }
 ```
 字段说明：
@@ -27,3 +28,4 @@
 5. alpn:协议列表
 6. auth_timeout: 客户端认证超时时间
 7. max_idle_time: 各种网络传输超时时间
+8. max_packet_size: 分片包大小

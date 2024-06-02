@@ -11,7 +11,7 @@ import (
 	"github.com/ZYKJShadow/tuic-protocol-go/options"
 	"github.com/ZYKJShadow/tuic-protocol-go/protocol"
 	"github.com/ZYKJShadow/tuic-protocol-go/utils"
-	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go" 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"io"

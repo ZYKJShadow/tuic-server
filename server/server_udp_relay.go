@@ -92,6 +92,7 @@ func (s *TUICServer) udp(conn quic.Connection, assocID uint16, data []byte, mode
 		go s.onReadUdp(conn, udp, assocID, mode, addr)
 	}
 
+	_ = udp.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(s.MaxIdleTime)))
 	_, err := udp.Write(data)
 	if err != nil {
 		logrus.Errorf("udp write err:%v", err)
@@ -102,8 +103,10 @@ func (s *TUICServer) udp(conn quic.Connection, assocID uint16, data []byte, mode
 }
 
 func (s *TUICServer) onReadUdp(conn quic.Connection, udp *net.UDPConn, assocID uint16, mode string, remoteAddr address.Address) {
-	data := make([]byte, 2048)
+	data := make([]byte, s.MaxPacketSize)
 	for {
+		_ = udp.SetReadDeadline(time.Now().Add(time.Second * time.Duration(s.MaxIdleTime)))
+
 		_, err := udp.Read(data)
 		if err != nil {
 			logrus.Errorf("udp read err:%v", err)
@@ -118,7 +121,7 @@ func (s *TUICServer) onReadUdp(conn quic.Connection, udp *net.UDPConn, assocID u
 			Addr:      remoteAddr,
 		}
 
-		opts.CalFragTotal(data, 2048)
+		opts.CalFragTotal(data, s.MaxPacketSize)
 
 		switch {
 		case opts.FragTotal > 1:
@@ -130,12 +133,15 @@ func (s *TUICServer) onReadUdp(conn quic.Connection, udp *net.UDPConn, assocID u
 }
 
 func (s *TUICServer) onRelayFragmentedUdpSend(conn quic.Connection, data []byte, mode string, opts *options.PacketOptions) {
-	fragSize := len(data) / int(opts.FragTotal)
+	// 确保即使 len(data) 不能被 opts.FragTotal 整除也能正确处理
+	fragSize := (len(data) + int(opts.FragTotal) - 1) / int(opts.FragTotal)
+	opts.Size = uint16(fragSize)
+
 	for i := 0; i < int(opts.FragTotal); i++ {
 		opts.FragID = uint8(i)
 		start := i * fragSize
 		end := start + fragSize
-		if i == int(opts.FragTotal)-1 {
+		if end > len(data) {
 			end = len(data)
 		}
 		s.onRelayUdpSend(conn, data[start:end], mode, opts)
