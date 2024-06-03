@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 )
 
 type Config struct {
@@ -29,4 +30,32 @@ func (c *Config) SetDefaults() {
 	c.ZeroRTTHandshake = false
 	c.AuthTimeout = 3
 	c.MaxIdleTime = 5
+}
+
+func (c *Config) CheckValid() error {
+	if c.Server == "" {
+		return errors.New("server is empty")
+	}
+
+	if c.Password == "" {
+		return errors.New("password is empty")
+	}
+
+	if c.CertPath == "" {
+		return errors.New("cert path is empty")
+	}
+
+	if c.PrivateKey == "" {
+		return errors.New("private key is empty")
+	}
+
+	if c.AuthTimeout <= 0 {
+		c.AuthTimeout = 3
+	}
+
+	if c.MaxIdleTime <= 0 {
+		c.MaxIdleTime = 5
+	}
+
+	return nil
 }

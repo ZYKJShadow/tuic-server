@@ -43,7 +43,11 @@ func (s *TUICServer) onHandleQUICPacket(conn quic.Connection, data []byte, opts 
 }
 
 func (s *TUICServer) onHandleNativePacket(conn quic.Connection, data []byte, opts *options.PacketOptions) error {
-	return s.udp(conn, opts.AssocID, data, protocol.UdpRelayModeNative, opts.Addr)
+	if opts.FragTotal > 1 {
+		return s.onHandleFragmentedPacket(conn, data, protocol.UdpRelayModeQuic, opts)
+	}
+
+	return s.udp(conn, opts.AssocID, data, protocol.UdpRelayModeQuic, opts.Addr)
 }
 
 func (s *TUICServer) onHandleFragmentedPacket(conn quic.Connection, data []byte, mode string, opts *options.PacketOptions) error {

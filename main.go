@@ -33,6 +33,11 @@ func main() {
 			panic(err)
 		}
 
+		err = cfg.CheckValid()
+		if err != nil {
+			panic(err)
+		}
+
 	} else {
 		cfg.SetDefaults()
 	}
