@@ -11,7 +11,7 @@ import (
 	"github.com/ZYKJShadow/tuic-protocol-go/options"
 	"github.com/ZYKJShadow/tuic-protocol-go/protocol"
 	"github.com/ZYKJShadow/tuic-protocol-go/utils"
-	"github.com/quic-go/quic-go" 
+	"github.com/quic-go/quic-go"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"io"
@@ -158,8 +158,6 @@ func (s *TUICServer) onConnection(conn quic.Connection) {
 				return err
 			}
 
-			_ = stream.SetDeadline(time.Now().Add(time.Second * time.Duration(s.MaxIdleTime)))
-
 			g.Go(func() error {
 				s.onHandleStream(conn, stream)
 				return nil
@@ -264,13 +262,10 @@ func (s *TUICServer) onHandleStream(conn quic.Connection, stream quic.Stream) {
 	if !s.authenticator.GetAuth(conn) {
 		err = s.authenticator.WaitForAuth(conn)
 		if err != nil {
-			s.onCloseStream(stream)
 			logrus.Errorf("Failed to wait for auth: %v", err)
 			return
 		}
 	}
-
-	defer s.onCloseStream(stream)
 
 	switch cmd.Type {
 	case protocol.CmdAuthenticate:
@@ -345,9 +340,4 @@ func (s *TUICServer) dissociate(conn quic.Connection, stream io.Reader) error {
 	}
 
 	return nil
-}
-
-func (s *TUICServer) onCloseStream(stream quic.Stream) {
-	stream.CancelRead(protocol.NormalClosed)
-	stream.CancelWrite(protocol.NormalClosed)
 }

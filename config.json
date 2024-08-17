@@ -8,5 +8,6 @@
   ],
   "zero_rtt_handshake": true,
   "auth_timeout": 3,
-  "max_idle_time": 3
+  "max_idle_time": 3,
+  "max_packet_size": 10
 }

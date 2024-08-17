@@ -1,7 +1,6 @@
 package server
 
 import (
-	"errors"
 	"github.com/ZYKJShadow/tuic-protocol-go/address"
 	"github.com/ZYKJShadow/tuic-protocol-go/options"
 	"github.com/ZYKJShadow/tuic-protocol-go/protocol"
@@ -20,60 +19,79 @@ func (s *TUICServer) connect(stream quic.Stream, opts *options.ConnectOptions) e
 		return err
 	}
 
-	_ = conn.SetDeadline(time.Now().Add(time.Second * time.Duration(s.MaxIdleTime)))
+	defer func() {
+		_ = conn.Close()
+		_ = stream.Close()
+	}()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		// 从stream中读取数据并写入conn
-		_, err := io.Copy(conn, stream)
-		if err != nil {
-			// 发生错误，取消读取并通知客户端
-			var e *quic.StreamError
-			if errors.As(err, &e) && e.ErrorCode == protocol.NormalClosed {
-				stream.CancelRead(protocol.NormalClosed)
-				return
-			}
-
-			if errors.Is(err, net.ErrClosed) {
-				stream.CancelRead(protocol.NormalClosed)
-				return
-			}
-
-			logrus.Errorf("Failed to copy from stream to conn: %v", err)
-			stream.CancelRead(protocol.ServerCanceled)
-
-			return
-		}
-
-		// stream数据接受完毕，正常关闭tcp连接
-		_ = conn.Close()
+		defer stream.CancelRead(protocol.NormalClosed)
+		s.relay(conn, stream)
+		logrus.Infof("streamID:%v Cancel Read", stream.StreamID())
 	}()
 
 	go func() {
 		defer wg.Done()
-		// 从conn中读取数据并写入stream
-		_, err := io.Copy(stream, conn)
-		if err != nil {
-			_ = conn.Close()
-
-			if errors.Is(err, net.ErrClosed) {
-				return
-			}
-
-			logrus.Errorf("Failed to copy from conn to stream: %v", err)
-
-			return
-		}
-
-		_ = stream.Close()
+		defer stream.CancelWrite(protocol.NormalClosed)
+		s.relay(stream, conn)
+		logrus.Infof("streamID:%v Cancel Write", stream.StreamID())
 	}()
 
 	wg.Wait()
 
 	return nil
+}
+
+func (s *TUICServer) relay(dst io.Writer, src io.Reader) {
+	var wg sync.WaitGroup
+	buf := make(chan []byte, 32*1024)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		defer close(buf)
+		for {
+			b := make([]byte, 32*1024)
+			n, err := src.Read(b)
+			if err != nil && err != io.EOF {
+				logrus.Errorf("Failed to Read conn err: %v", err)
+				return
+			}
+
+			if err == io.EOF {
+				return
+			}
+
+			if n <= 0 {
+				return
+			}
+
+			buf <- b[:n]
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for {
+			b, ok := <-buf
+			_, err := dst.Write(b)
+			if err != nil {
+				logrus.Errorf("Failed to write buf to stream: %v", err)
+				return
+			}
+
+			if !ok {
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
 }
 
 func (s *TUICServer) tcp(stream quic.Stream, protocolAddr address.Address) (net.Conn, error) {
@@ -121,8 +139,7 @@ func (s *TUICServer) tcp(stream quic.Stream, protocolAddr address.Address) (net.
 		return nil, err
 	}
 
-	_ = rc.SetReadDeadline(time.Now().Add(time.Second * time.Duration(s.Config.MaxIdleTime)))
-	_ = rc.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(s.Config.MaxIdleTime)))
+	_ = rc.SetDeadline(time.Now().Add(time.Second * 5))
 
 	return rc, nil
 }
