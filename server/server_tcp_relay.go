@@ -24,6 +24,9 @@ func (s *TUICServer) connect(stream quic.Stream, opts *options.ConnectOptions) e
 		_ = stream.Close()
 	}()
 
+	_ = conn.SetDeadline(time.Now().Add(time.Second * 5))
+	_ = stream.SetDeadline(time.Now().Add(time.Second * 5))
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -31,14 +34,12 @@ func (s *TUICServer) connect(stream quic.Stream, opts *options.ConnectOptions) e
 		defer wg.Done()
 		defer stream.CancelRead(protocol.NormalClosed)
 		s.relay(conn, stream)
-		logrus.Infof("streamID:%v Cancel Read", stream.StreamID())
 	}()
 
 	go func() {
 		defer wg.Done()
 		defer stream.CancelWrite(protocol.NormalClosed)
 		s.relay(stream, conn)
-		logrus.Infof("streamID:%v Cancel Write", stream.StreamID())
 	}()
 
 	wg.Wait()
@@ -78,15 +79,17 @@ func (s *TUICServer) relay(dst io.Writer, src io.Reader) {
 	go func() {
 		defer wg.Done()
 		for {
-			b, ok := <-buf
-			_, err := dst.Write(b)
-			if err != nil {
-				logrus.Errorf("Failed to write buf to stream: %v", err)
-				return
-			}
+			select {
+			case b, ok := <-buf:
+				_, err := dst.Write(b)
+				if err != nil {
+					logrus.Errorf("Failed to write buf to stream: %v", err)
+					return
+				}
 
-			if !ok {
-				return
+				if !ok {
+					return
+				}
 			}
 		}
 	}()
@@ -138,8 +141,6 @@ func (s *TUICServer) tcp(stream quic.Stream, protocolAddr address.Address) (net.
 		_ = rc.Close()
 		return nil, err
 	}
-
-	_ = rc.SetDeadline(time.Now().Add(time.Second * 5))
 
 	return rc, nil
 }
