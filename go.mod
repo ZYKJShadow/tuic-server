@@ -4,7 +4,7 @@ go 1.21.7
 
 require (
 	github.com/ZYKJShadow/tuic-protocol-go v0.0.0-20240602040221-eebb73052639
-	github.com/quic-go/quic-go v0.44.0
+	github.com/quic-go/quic-go v0.46.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301
 	golang.org/x/sync v0.7.0

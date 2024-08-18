@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"github.com/ZYKJShadow/tuic-protocol-go/address"
 	"github.com/ZYKJShadow/tuic-protocol-go/options"
 	"github.com/ZYKJShadow/tuic-protocol-go/protocol"
@@ -9,7 +10,6 @@ import (
 	"github.com/txthinking/socks5"
 	"io"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -19,82 +19,49 @@ func (s *TUICServer) connect(stream quic.Stream, opts *options.ConnectOptions) e
 		return err
 	}
 
+	_ = conn.SetDeadline(time.Now().Add(time.Second * time.Duration(s.Config.MaxIdleTime)))
+
 	defer func() {
 		_ = conn.Close()
-		_ = stream.Close()
-	}()
-
-	_ = conn.SetDeadline(time.Now().Add(time.Second * 5))
-	_ = stream.SetDeadline(time.Now().Add(time.Second * 5))
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		defer stream.CancelRead(protocol.NormalClosed)
-		s.relay(conn, stream)
 	}()
 
 	go func() {
-		defer wg.Done()
-		defer stream.CancelWrite(protocol.NormalClosed)
-		s.relay(stream, conn)
+		_ = s.relay(conn, stream)
 	}()
 
-	wg.Wait()
+	err = s.relay(stream, conn)
+	if err != nil {
+		logrus.Errorf("stream, conn error: %v", err)
+	}
 
 	return nil
 }
 
-func (s *TUICServer) relay(dst io.Writer, src io.Reader) {
-	var wg sync.WaitGroup
-	buf := make(chan []byte, 32*1024)
+func (s *TUICServer) relay(dst io.Writer, src io.Reader) error {
+	buf := make([]byte, 32*1024)
 
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		defer close(buf)
-		for {
-			b := make([]byte, 32*1024)
-			n, err := src.Read(b)
-			if err != nil && err != io.EOF {
-				logrus.Errorf("Failed to Read conn err: %v", err)
-				return
-			}
-
+	for {
+		n, err := src.Read(buf)
+		if err != nil {
 			if err == io.EOF {
-				return
+				return nil
 			}
 
-			if n <= 0 {
-				return
+			var e *quic.StreamError
+			if errors.As(err, &e) && e.ErrorCode == protocol.NormalClosed {
+				return nil
 			}
 
-			buf <- b[:n]
+			return err
 		}
-	}()
 
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case b, ok := <-buf:
-				_, err := dst.Write(b)
-				if err != nil {
-					logrus.Errorf("Failed to write buf to stream: %v", err)
-					return
-				}
-
-				if !ok {
-					return
-				}
+		if n > 0 {
+			n, err = dst.Write(buf[:n])
+			if err != nil {
+				return err
 			}
 		}
-	}()
-
-	wg.Wait()
+	}
 }
 
 func (s *TUICServer) tcp(stream quic.Stream, protocolAddr address.Address) (net.Conn, error) {

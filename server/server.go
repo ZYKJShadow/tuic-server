@@ -25,6 +25,7 @@ import (
 )
 
 type TUICServer struct {
+	ctx              context.Context
 	listener         *quic.Listener
 	authenticator    *authenticate.Authenticate
 	fragmentCacheMap map[quic.Connection]*fragment.FCache
@@ -107,6 +108,7 @@ func NewTUICServer(cfg *config.Config) (*TUICServer, error) {
 	logrus.Infof("server listen on %s", cfg.Server)
 
 	return &TUICServer{
+		ctx:              context.Background(),
 		listener:         listener,
 		Config:           cfg,
 		authenticator:    authenticate.NewAuthenticate(cfg.AuthTimeout),
@@ -159,6 +161,12 @@ func (s *TUICServer) onConnection(conn quic.Connection) {
 			}
 
 			g.Go(func() error {
+				defer func() {
+					_ = stream.Close()
+					stream.CancelRead(protocol.NormalClosed)
+					stream.CancelWrite(protocol.NormalClosed)
+				}()
+
 				s.onHandleStream(conn, stream)
 				return nil
 			})
